@@ -7,18 +7,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function LoginPage() {
-  // Mix up naming conventions
   const { data: session, status } = useSession()
   const router = useRouter()
 
-  // Redirect if already logged in
   useEffect(() => {
     if (status === "authenticated") {
       router.push("/")
     }
   }, [status, router])
 
-  // Commented out code that looks like it was part of development
   /*
   const handleCustomLogin = async (e) => {
     e.preventDefault();
@@ -42,8 +39,8 @@ export default function LoginPage() {
     <div className="flex items-center justify-center min-h-screen bg-muted/40">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold">ESP32 Monitor</CardTitle>
-          <CardDescription>Sign in to access your ESP32 devices</CardDescription>
+          <CardTitle className="text-2xl font-bold">GreenhouseWebApp</CardTitle>
+          <CardDescription>Sign in to access your GreenhouseWebApp</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <Button onClick={() => signIn("google", { callbackUrl: "/" })} className="w-full" size="lg">
@@ -68,13 +65,6 @@ export default function LoginPage() {
             </svg>
             Sign in with Google
           </Button>
-
-          {/* Commented out until we add more providers 
-          <Button variant="outline" className="w-full" size="lg">
-            <GithubIcon className="w-5 h-5 mr-2" />
-            Sign in with GitHub
-          </Button>
-          */}
         </CardContent>
       </Card>
     </div>

@@ -215,7 +215,7 @@ function ESP32Dashboard() {
   return (
     <div className="container mx-auto py-8 px-4">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">ESP32 Dashboard</h1>
+        <h1 className="text-2xl font-bold">GreenhouseWebApp</h1>
         <div className="flex items-center gap-4">
           {session?.user?.name && (
             <span className="text-sm text-muted-foreground">Signed in as {session.user.name}</span>
