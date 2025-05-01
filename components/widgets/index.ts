@@ -1,0 +1,8 @@
+export { default as WidgetManager } from "./widget-manager"
+export { default as LedControlWidget } from "./led-control-widget"
+export { default as MoistureSensorWidget } from "./moisture-sensor-widget"
+export { default as TempHumidityWidget } from "./temp-humidity-widget"
+export { default as WaterPumpWidget } from "./water-pump-widget"
+export { default as LightSensorWidget } from "./light-sensor-widget"
+export { default as LightControlWidget } from "./light-control-widget"
+export { default as WebcamWidget } from "./webcam-widget"

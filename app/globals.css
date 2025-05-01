@@ -2,16 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* My custom styles */
 body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Might replace this with a custom component later */
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
 }
 
+/* 
+  Color scheme - tried a few different ones before settling on this
+  Might tweak these later for better contrast
+*/
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -48,6 +54,8 @@ body {
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
+
+  /* Dark mode colors - still tweaking these */
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
@@ -91,4 +99,13 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Tried adding these but they didn't look right
+  h1 {
+    @apply text-2xl font-bold;
+  }
+  h2 {
+    @apply text-xl font-semibold;
+  }
+  */
 }

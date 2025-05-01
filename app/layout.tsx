@@ -1,27 +1,31 @@
-import "./globals.css"
+import type React from "react"
+import "@/app/globals.css"
 import { Inter } from "next/font/google"
-import Navbar from "./components/Navbar"
-import { getServerSession } from "next-auth/next"
-import SessionProvider from "./components/SessionProvider"
+import { ThemeProvider } from "@/components/theme-provider"
+import AuthProvider from "@/components/session-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
-export default async function RootLayout({
+export const metadata = {
+  title: "GreenhouseWebApp",
+  description: "Monitor your Greenhouse",
+}
+
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const session = await getServerSession()
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <SessionProvider session={session}>
-          {session && <Navbar />}
-          {children}
-        </SessionProvider>
+        <AuthProvider>
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+            {children}
+          </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   )
 }
-
