@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
-import { Droplet, Trash2, Settings, Timer } from "lucide-react"
+import { Droplet, Trash2, Settings } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -38,7 +38,8 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
   const [pinNumber, setPinNumber] = useState(widget.pin?.toString() || "5")
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsSaved, setSettingsSaved] = useState(false)
-  const [activeTab, setActiveTab] = useState("manual")
+  // Initialize activeTab based on saved autoMode configuration
+  const [activeTab, setActiveTab] = useState(widget.configuration?.autoMode ? "auto" : "manual")
   const [autoMode, setAutoMode] = useState(widget.configuration?.autoMode || false)
   const [minMoistureLevel, setMinMoistureLevel] = useState(widget.configuration?.minMoistureLevel || 30)
   const [checkInterval, setCheckInterval] = useState(widget.configuration?.checkInterval || 15)
@@ -55,10 +56,15 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
   const pumpTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
+    // Initialize state based on current mode and saved configuration
     if (widget.configuration?.state) {
-      setManualPumpState(widget.configuration.state)
+      if (autoMode) {
+        setAutoPumpState(widget.configuration.state)
+      } else {
+        setManualPumpState(widget.configuration.state)
+      }
     }
-  }, [widget.configuration?.state])
+  }, [widget.configuration?.state, autoMode])
 
   useEffect(() => {
     if (activeTab === "manual") {
@@ -67,6 +73,10 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
       setPumpState(autoPumpState)
     }
   }, [activeTab, manualPumpState, autoPumpState])
+
+  useEffect(() => {
+    setActiveTab(autoMode ? "auto" : "manual")
+  }, [autoMode])
 
   const fetchMoistureLevel = async () => {
     if (!deviceIp) return null
@@ -120,7 +130,7 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
       const response = await fetch(`http://${deviceIp}/set-pump-check-interval`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ interval: minutes * 60 * 1000 }), // Convert to milliseconds
+        body: JSON.stringify({ interval: minutes * 60 * 1000 }),
       })
       if (!response.ok) throw new Error(`Failed to update check interval: ${response.status}`)
       const data = await response.json()
@@ -138,30 +148,16 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
     setSettingsSaved(false)
     setError(null)
     try {
-
-      /*
-      const newPin = Number.parseInt(pinNumber)
-      if (isNaN(newPin) || newPin < 0 || newPin > 39) {
-        throw new Error("Pin must be a valid GPIO number (0-39)")
-      }
-      if (newPin !== widget.pin) {
-        const pinSuccess = await updateRelayPin(newPin)
-        if (!pinSuccess) throw new Error("Failed to update relay pin")
-      }
-      */
-
       const intervalSuccess = await updateCheckInterval(checkInterval)
       if (!intervalSuccess) throw new Error("Failed to update check interval")
 
       if (widget.id) {
-  
         await StorageService.updateWidgetConfiguration(widget.id, {
           ...widget.configuration,
           checkInterval,
         })
       }
 
-    
       setSettingsSaved(true)
       setTimeout(() => {
         setSettingsOpen(false)
@@ -200,6 +196,7 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
           await StorageService.updateWidgetConfiguration(widget.id, {
             ...widget.configuration,
             state: activeTab === "manual" ? newState : widget.configuration?.state,
+            autoMode,
           })
         }
         if (newState && autoShutdown) {
@@ -258,8 +255,16 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
   }
 
   const handleAutoModeToggle = async (newAutoMode: boolean) => {
-    if (!newAutoMode && autoPumpState) {
-      await togglePump(false, false, true)
+    if (newAutoMode) {
+      if (manualPumpState) {
+        await togglePump(false, false, false)
+      }
+      setManualPumpState(false)
+    } else {
+      if (autoPumpState) {
+        await togglePump(false, false, true)
+      }
+      setAutoPumpState(false)
     }
     setAutoMode(newAutoMode)
   }
@@ -331,9 +336,14 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
         const response = await fetch(`http://${deviceIp}/relay`)
         if (response.ok) {
           const data = await response.json()
-          setManualPumpState(data.state)
-          setAutoPumpState(data.state)
-          setPumpState(data.state)
+          // Only update the state that corresponds to the current mode
+          if (autoMode) {
+            setAutoPumpState(data.state)
+            if (activeTab === "auto") setPumpState(data.state)
+          } else {
+            setManualPumpState(data.state)
+            if (activeTab === "manual") setPumpState(data.state)
+          }
           if (widget.id && data.state !== widget.configuration?.state) {
             await StorageService.updateWidgetConfiguration(widget.id, {
               ...widget.configuration,
@@ -346,7 +356,7 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
       }
     }
     fetchPumpState()
-  }, [deviceIp])
+  }, [deviceIp, autoMode])
 
   const handleTabChange = (value: string) => {
     setActiveTab(value)
@@ -391,7 +401,7 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
       <CardHeader className="pb-2">
         <div className="flex justify-between items-center">
           <CardTitle className="text-lg flex items-center gap-2">
-            <Droplet className={`h-4 w-4 ${pumpState ? "text-blue-500" : ""}`} />
+            <Droplet className={`h-4 w-4 ${pumpState ? "text-red-500" : ""}`} />
             {widget.name}
           </CardTitle>
           <div className="flex gap-2">
@@ -407,19 +417,6 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
                   <DialogDescription>Configure the water pump relay</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
-                  {/* Pin number input - commented out temporarily
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="pin-number" className="text-right">Relay Pin</Label>
-                    <Input
-                      id="pin-number"
-                      value={pinNumber}
-                      onChange={(e) => setPinNumber(e.target.value)}
-                      className="col-span-3"
-                      type="number"
-                      placeholder="5"
-                    />
-                  </div>
-                  */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="check-interval">Check Interval</Label>
@@ -463,21 +460,21 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
         {widget.pin !== null && <CardDescription>Pin: {widget.pin}</CardDescription>}
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="manual" className="w-full" onValueChange={handleTabChange}>
+        <Tabs value={activeTab} className="w-full" onValueChange={handleTabChange}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="manual">Manual Control</TabsTrigger>
             <TabsTrigger value="auto">Auto Irrigation</TabsTrigger>
           </TabsList>
-          <TabsContent value="manual" className="space-y-4">
+          <TabsContent value="manual" className=" awful space-y-4">
             <div className="flex items-center justify-between mt-4">
               <div className="flex items-center gap-2">
                 <span>Water Pump</span>
-                {manualPumpState && <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>}
+                {manualPumpState && <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>}
               </div>
               <Switch
                 checked={manualPumpState}
                 onCheckedChange={handleManualPumpToggle}
-                disabled={!deviceIp || isToggling}
+                disabled={!deviceIp || isToggling || autoMode}
               />
             </div>
             {manualPumpState && pumpStartTime && (
@@ -489,6 +486,11 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
               <p className="text-xs text-muted-foreground mt-2">Connect to a device to control water pump</p>
             )}
             {isToggling && <p className="text-xs text-muted-foreground mt-2">Updating pump state...</p>}
+            {autoMode && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Manual control is disabled while Auto Irrigation is active.
+              </p>
+            )}
             {error && <p className="text-xs text-destructive mt-2">{error}</p>}
           </TabsContent>
           <TabsContent value="auto" className="space-y-4">
@@ -564,9 +566,8 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
                 </p>
               </div>
               {autoMode && (
-                <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-md space-y-2">
+                <div className="bg-red-50 dark:bg-red-950 p-3 rounded-md space-y-2">
                   <div className="flex items-center gap-2 text-sm">
-                    <Timer className="h-4 w-4 text-blue-500" />
                     <span className="font-medium">Automation Status</span>
                   </div>
                   {currentMoisture !== null && (
@@ -609,10 +610,9 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
             </div>
           </TabsContent>
         </Tabs>
-        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950 rounded-md">
-          <p className="text-xs text-blue-700 dark:text-blue-300">
-            <strong>Warning:</strong> Make sure your water pump is properly connected before turning it on. Ensure there
-            is water available to prevent pump damage.
+        <div className="mt-4 p-3 bg-red-50 dark:bg-red-950 rounded-md">
+          <p className="text-xs text-red-700 dark:text-red-300">
+            <strong>Warning:</strong> Water can cause damage!!!!.
           </p>
         </div>
       </CardContent>

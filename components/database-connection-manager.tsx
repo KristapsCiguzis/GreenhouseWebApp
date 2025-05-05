@@ -30,10 +30,25 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
   const [sendRelayState, setSendRelayState] = useState(true)
   const [sendLightRelayState, setSendLightRelayState] = useState(true)
   const [sendLightAutoMode, setSendLightAutoMode] = useState(true)
-  const [temperatureUploadInterval, setTemperatureUploadInterval] = useState("60000")
-  const [humidityUploadInterval, setHumidityUploadInterval] = useState("60000")
-  const [soilMoistureUploadInterval, setSoilMoistureUploadInterval] = useState("60000")
-  const [lightLevelUploadInterval, setLightLevelUploadInterval] = useState("60000")
+  
+  // Initialize with 1 hour as default
+  const [temperatureHours, setTemperatureHours] = useState("1")
+  const [humidityHours, setHumidityHours] = useState("1")
+  const [soilMoistureHours, setSoilMoistureHours] = useState("1")
+  const [lightLevelHours, setLightLevelHours] = useState("1")
+  
+  // For confirmation message
+  const [lastSuccess, setLastSuccess] = useState<string | null>(null)
+
+  // Convert milliseconds to hours, rounding to 1 decimal place
+  const convertMsToHours = (ms: number) => {
+    return (Math.round(ms / 3600000 * 10) / 10).toString()
+  }
+
+  // Convert hours to milliseconds
+  const convertHoursToMs = (hours: string) => {
+    return Math.round(parseFloat(hours) * 3600000)
+  }
 
   const fetchSettings = async (ip: string) => {
     setIsLoading(true)
@@ -60,10 +75,12 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
       setSendRelayState(data.dataConfig?.sendRelayState ?? true)
       setSendLightRelayState(data.dataConfig?.sendLightRelayState ?? true)
       setSendLightAutoMode(data.dataConfig?.sendLightAutoMode ?? true)
-      setTemperatureUploadInterval(String(data.intervals?.temperature ?? 60000))
-      setHumidityUploadInterval(String(data.intervals?.humidity ?? 60000))
-      setSoilMoistureUploadInterval(String(data.intervals?.soilMoisture ?? 60000))
-      setLightLevelUploadInterval(String(data.intervals?.lightLevel ?? 60000))
+      
+      // Just set everything to 1
+      setTemperatureHours("1")
+      setHumidityHours("1")
+      setSoilMoistureHours("1")
+      setLightLevelHours("1")
 
       toast({
         title: "Success",
@@ -100,10 +117,10 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
       setSendRelayState(true)
       setSendLightRelayState(true)
       setSendLightAutoMode(true)
-      setTemperatureUploadInterval("60000")
-      setHumidityUploadInterval("60000")
-      setSoilMoistureUploadInterval("60000")
-      setLightLevelUploadInterval("60000")
+      setTemperatureHours("1")
+      setHumidityHours("1")
+      setSoilMoistureHours("1")
+      setLightLevelHours("1")
     }
   }
 
@@ -156,22 +173,23 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
       return
     }
 
+    // Convert all hours values to milliseconds
     const intervals = {
-      temperature: Number.parseInt(temperatureUploadInterval) || 60000,
-      humidity: Number.parseInt(humidityUploadInterval) || 60000,
-      soilMoisture: Number.parseInt(soilMoistureUploadInterval) || 60000,
-      lightLevel: Number.parseInt(lightLevelUploadInterval) || 60000,
+      temperature: convertHoursToMs(temperatureHours),
+      humidity: convertHoursToMs(humidityHours),
+      soilMoisture: convertHoursToMs(soilMoistureHours),
+      lightLevel: convertHoursToMs(lightLevelHours),
     }
 
     if (
-      intervals.temperature < 1000 ||
-      intervals.humidity < 1000 ||
-      intervals.soilMoisture < 1000 ||
-      intervals.lightLevel < 1000
+      intervals.temperature < 3600000 ||
+      intervals.humidity < 3600000 ||
+      intervals.soilMoisture < 3600000 ||
+      intervals.lightLevel < 3600000
     ) {
       toast({
         title: "Error",
-        description: "All upload intervals must be at least 1000 ms.",
+        description: "All upload intervals must be at least 1 hour.",
         variant: "destructive",
       })
       return
@@ -208,9 +226,11 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
         throw new Error(`Failed to update ESP32 configuration at ${selectedEsp32Ip}: ${response.statusText}`)
       }
 
+      setLastSuccess(`ESP32 at ${selectedEsp32Ip} configured successfully!!`)
+      
       toast({
         title: "Success",
-        description: `ESP32 at ${selectedEsp32Ip} configured successfully.`,
+        description: `ESP32 at ${selectedEsp32Ip} configured successfully!!!.`,
       })
     } catch (error: any) {
       console.error(`Error updating ESP32 configuration at ${selectedEsp32Ip}:`, error)
@@ -256,9 +276,10 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
       if (data.success) {
         setSupabaseUrl("")
         setSupabaseApiKey("")
+        setLastSuccess(`Supabase config cleared on ESP32 at ${selectedEsp32Ip}!!!!`)
         toast({
           title: "Success",
-          description: `Supabase URL and API Key cleared on ESP32 at ${selectedEsp32Ip}.`,
+          description: `Supabase URL and API Key cleared on ESP32 at ${selectedEsp32Ip}!!!!.`,
         })
       } else {
         throw new Error("Failed to clear Supabase configuration: " + (data.error || "Unknown error"))
@@ -422,55 +443,47 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
             </div>
           </div>
           <div className="space-y-4">
-            <Label>Upload Intervals (ms)</Label>
+            <Label>Upload Intervals (hours)</Label>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="temperature-interval">Temperature Interval</Label>
+                <Label htmlFor="temperature-interval">Temperature</Label>
                 <Input
                   id="temperature-interval"
-                  type="number"
-                  value={temperatureUploadInterval}
-                  onChange={(e) => setTemperatureUploadInterval(e.target.value)}
-                  disabled={loading || sendingToEsp32 || clearingConfig}
-                  min="1000"
+                  type="text"
+                  value={temperatureHours}
+                  onChange={(e) => setTemperatureHours(e.target.value)}
                 />
               </div>
               <div>
-                <Label htmlFor="humidity-interval">Humidity Interval</Label>
+                <Label htmlFor="humidity-interval">Humidity</Label>
                 <Input
-                  id="humidity-interval"
-                  type="number"
-                  value={humidityUploadInterval}
-                  onChange={(e) => setHumidityUploadInterval(e.target.value)}
-                  disabled={loading || sendingToEsp32 || clearingConfig}
-                  min="1000"
+                  id="humidity-interval"  
+                  type="text"
+                  value={humidityHours}
+                  onChange={(e) => setHumidityHours(e.target.value)}
                 />
               </div>
               <div>
-                <Label htmlFor="soil-moisture-interval">Soil Moisture Interval</Label>
+                <Label htmlFor="soil-moisture-interval">Soil Moisture</Label>
                 <Input
                   id="soil-moisture-interval"
-                  type="number"
-                  value={soilMoistureUploadInterval}
-                  onChange={(e) => setSoilMoistureUploadInterval(e.target.value)}
-                  disabled={loading || sendingToEsp32 || clearingConfig}
-                  min="1000"
+                  type="text"
+                  value={soilMoistureHours}
+                  onChange={(e) => setSoilMoistureHours(e.target.value)}
                 />
               </div>
               <div>
-                <Label htmlFor="light-level-interval">Light Level Interval</Label>
+                <Label htmlFor="light-level-interval">Light Level</Label>
                 <Input
                   id="light-level-interval"
-                  type="number"
-                  value={lightLevelUploadInterval}
-                  onChange={(e) => setLightLevelUploadInterval(e.target.value)}
-                  disabled={loading || sendingToEsp32 || clearingConfig}
-                  min="1000"
+                  type="text"
+                  value={lightLevelHours}
+                  onChange={(e) => setLightLevelHours(e.target.value)}
                 />
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              Minimum interval: 1000 ms.
+              Minimum interval: 1 hour.
             </p>
           </div>
           <div className="flex space-x-4">
@@ -510,6 +523,11 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
               )}
             </Button>
           </div>
+          {lastSuccess && (
+            <div className="text-sm text-green-600 mt-4 text-center">
+              {lastSuccess}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
