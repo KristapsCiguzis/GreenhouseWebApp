@@ -1,6 +1,7 @@
+// app/page.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -11,6 +12,16 @@ import DeviceManager from "@/components/device-manager"
 import WidgetManager from "@/components/widgets/widget-manager"
 import { supabase } from "@/lib/supabase"
 import DatabaseConnectionManager from "@/components/database-connection-manager"
+import { MockESP32Api } from "@/lib/mock-esp32-api"
+import { setupMockFetch } from "@/lib/mock-fetch-middleware"
+
+interface Device {
+  id: string
+  user_id: string
+  name: string
+  ip_address: string
+
+}
 
 function ESP32Dashboard() {
   const { data: session, status } = useSession()
@@ -20,9 +31,11 @@ function ESP32Dashboard() {
   const [connectedDevices, setConnectedDevices] = useState<Map<string, any>>(new Map())
   const [hasConnections, setHasConnections] = useState<boolean>(false)
   const [reconnecting, setIsReconnecting] = useState<boolean>(false)
-  const [showSettings, setShowSettings] = useState<boolean>(false)
+  const [showSettings, setShowSettings] = useState<boolean>(false) 
   const [manualDisconnect, setManualDisconnect] = useState<boolean>(false)
-
+  const initialLoadRef = useRef(true)
+  const [devices, setDevices] = useState<Device[]>([])
+  const cleanupRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -31,11 +44,35 @@ function ESP32Dashboard() {
   }, [status, router])
 
   useEffect(() => {
+    if (status === "authenticated" && initialLoadRef.current) {
+      initialLoadRef.current = false
+
+      try {
+        const storedDevices = localStorage.getItem("connectedDevices")
+        if (storedDevices) {
+          const parsedDevices = JSON.parse(storedDevices)
+          if (Array.isArray(parsedDevices) && parsedDevices.length > 0) {
+            setConnectedDeviceIds(new Set(parsedDevices))
+            setHasConnections(true)
+            console.log("Loaded connected devices from localStorage:", parsedDevices)
+          }
+        }
+      } catch (error) {
+        console.error("Error loading connected devices from localStorage:", error)
+      }
+    }
+  }, [status])
+
+  useEffect(() => {
+    if (initialLoadRef.current) return 
+
     if (connectedDeviceIds.size > 0) {
-      localStorage.setItem("lastConnectedDevice", JSON.stringify(Array.from(connectedDeviceIds)))
+      const deviceArray = Array.from(connectedDeviceIds)
+      localStorage.setItem("connectedDevices", JSON.stringify(deviceArray))
+      console.log("Saved connected devices to localStorage:", deviceArray)
     } else {
-      localStorage.removeItem("lastConnectedDevice")
-      setConnectedDevices(new Map())
+      localStorage.removeItem("connectedDevices")
+      setConnectedDevices(new Map()) 
     }
   }, [connectedDeviceIds])
 
@@ -46,8 +83,8 @@ function ESP32Dashboard() {
         return
       }
 
-      const newConnectedDevices = new Map()
 
+      const newConnectedDevices = new Map()
       for (const deviceId of connectedDeviceIds) {
         try {
           const { count, error: countError } = await supabase
@@ -66,7 +103,6 @@ function ESP32Dashboard() {
             handleDeviceConnect(deviceId, "disconnect")
             continue
           }
-
           const { data, error } = await supabase
             .from("devices")
             .select("*")
@@ -92,102 +128,55 @@ function ESP32Dashboard() {
   }, [connectedDeviceIds, session?.user?.id])
 
   useEffect(() => {
-    const attemptReconnect = async () => {
-      if (status === "authenticated" && session?.user?.id) {
-        const lastConnectedDeviceStr = localStorage.getItem("lastConnectedDevice")
-        let lastConnectedDevices = new Set<string>()
+    if (typeof window === "undefined") return
 
-        if (lastConnectedDeviceStr) {
-          try {
-            const parsed = JSON.parse(lastConnectedDeviceStr)
-            if (Array.isArray(parsed)) {
-              lastConnectedDevices = new Set(parsed.filter((id) => typeof id === "string"))
-            }
-          } catch (error) {
-            console.error("Error parsing stored device IDs:", error)
-          }
-        }
-
-        const wasManuallyDisconnected = localStorage.getItem("manualDisconnect") === "true"
-        setManualDisconnect(wasManuallyDisconnected)
-
-        if (lastConnectedDevices.size > 0 && !wasManuallyDisconnected) {
-          for (const deviceId of lastConnectedDevices) {
-            await reconnectToDevice(deviceId)
-          }
-        }
+    const handleBeforeUnload = () => {
+      if (connectedDeviceIds.size > 0) {
+        const deviceArray = Array.from(connectedDeviceIds)
+        localStorage.setItem("connectedDevices", JSON.stringify(deviceArray))
       }
     }
 
-    attemptReconnect()
-  }, [status, session])
+    window.addEventListener("beforeunload", handleBeforeUnload)
 
-  const reconnectToDevice = async (deviceId: string) => {
-    if (!session?.user?.id || reconnecting || manualDisconnect) return
-
-    setIsReconnecting(true)
-
-    try {
-      const { count, error: countError } = await supabase
-        .from("devices")
-        .select("*", { count: "exact", head: true })
-        .eq("id", deviceId)
-        .eq("user_id", session.user.id)
-
-      if (countError || count === 0) {
-        console.log("Device no longer exists or error checking:", countError?.message)
-        throw new Error("Device not found")
-      }
-
-      const { data: device, error } = await supabase
-        .from("devices")
-        .select("*")
-        .eq("id", deviceId)
-        .eq("user_id", session.user.id)
-        .single()
-
-      if (error || !device || !device.ip_address) {
-        throw new Error("Device not found or no IP address")
-      }
-
-      const response = await fetch(`http://${device.ip_address}/info`)
-
-      if (!response.ok) {
-        throw new Error("Failed to connect to ESP32")
-      }
-
-      await supabase
-        .from("devices")
-        .update({
-          last_connected: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", deviceId)
-
-      handleDeviceConnect(deviceId, "connect")
-    } catch (error) {
-      console.error("Auto-reconnect failed:", error)
-      const lastConnectedDeviceStr = localStorage.getItem("lastConnectedDevice")
-      let lastConnectedDevices = new Set<string>()
-
-      if (lastConnectedDeviceStr) {
-        try {
-          const parsed = JSON.parse(lastConnectedDeviceStr)
-          if (Array.isArray(parsed)) {
-            lastConnectedDevices = new Set(parsed.filter((id) => typeof id === "string"))
-          }
-        } catch (error) {
-          console.error("Error parsing stored device IDs:", error)
-        }
-      }
-
-      lastConnectedDevices.delete(deviceId)
-      localStorage.setItem("lastConnectedDevice", JSON.stringify(Array.from(lastConnectedDevices)))
-      handleDeviceConnect(deviceId, "disconnect")
-    } finally {
-      setIsReconnecting(false)
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload)
     }
-  }
+  }, [connectedDeviceIds])
+
+  useEffect(() => {
+    const mockApi = MockESP32Api.getInstance()
+
+    if (typeof window !== "undefined") {
+      const cleanup = setupMockFetch()
+      if (cleanup) {
+        cleanupRef.current = cleanup
+      }
+    }
+
+    return () => {
+      mockApi.cleanup()
+      if (cleanupRef.current) {
+        cleanupRef.current()
+      }
+    }
+  }, [])
+  useEffect(() => {
+    const fetchAllDevices = async () => {
+      if (!session?.user?.id) return
+
+      try {
+        const { data, error } = await supabase.from("devices").select("*").eq("user_id", session.user.id)
+
+        if (error) throw error
+        setDevices(data || [])
+      } catch (error) {
+        console.error("Error fetching devices:", error)
+      }
+    }
+
+    fetchAllDevices()
+  }, [session?.user?.id])
 
   const handleDeviceConnect = (deviceId: string | null, action: "connect" | "disconnect") => {
     if (!deviceId) return
@@ -196,12 +185,15 @@ function ESP32Dashboard() {
 
     if (action === "connect") {
       newConnectedIds.add(deviceId)
+      localStorage.removeItem("manualDisconnect")
+      setManualDisconnect(false)
     } else {
       newConnectedIds.delete(deviceId)
     }
 
     setConnectedDeviceIds(newConnectedIds)
     setHasConnections(newConnectedIds.size > 0)
+    localStorage.setItem("connectedDevices", JSON.stringify(Array.from(newConnectedIds)))
   }
 
   if (status === "loading" || status === "unauthenticated") {
@@ -210,7 +202,7 @@ function ESP32Dashboard() {
 
   const esp32Devices = Array.from(connectedDevices.values())
     .filter((device) => device?.ip_address)
-    .map((device) => device.ip_address);
+    .map((device) => device.ip_address)
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -226,6 +218,7 @@ function ESP32Dashboard() {
           </Button>
         </div>
       </div>
+
 
       <Tabs value={currentTab} onValueChange={setActiveTab} className="mb-6">
         <TabsList className="grid w-full grid-cols-3">

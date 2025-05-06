@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Sun, Trash2, Clock } from "lucide-react"
+import { Trash2, Sun, Clock } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import type { Widget } from "@/lib/supabase"
+
 import { Progress } from "@/components/ui/progress"
 
 interface LightSensorWidgetProps {
@@ -20,7 +21,7 @@ export default function LightSensorWidget({ widget, deviceIp, onDelete }: LightS
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
-  const [refreshInterval, setRefreshInterval] = useState(5000) 
+  const [refreshInterval, setRefreshInterval] = useState(5000)
 
   const isRefreshing = useRef(false)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -37,10 +38,10 @@ export default function LightSensorWidget({ widget, deviceIp, onDelete }: LightS
     setError(null)
 
     try {
-      console.log("Fetching sensor data from:", `http://${deviceIp}/light`)
+      console.log("Fetching sensor data from:", `http://${deviceIp}/sensors`)
 
       const timestamp = new Date().getTime()
-      const response = await fetch(`http://${deviceIp}/light?t=${timestamp}`, {
+      const response = await fetch(`http://${deviceIp}/sensors?t=${timestamp}`, {
         cache: "no-store",
       })
 
@@ -49,14 +50,27 @@ export default function LightSensorWidget({ widget, deviceIp, onDelete }: LightS
       }
 
       const data = await response.json()
-      console.log("Received light sensor data:", data)
+      console.log("Received sensor data:", data)
       setLastUpdated(new Date())
-
       if (data.percentage !== undefined) {
         setLightValue(data.percentage)
       } else if (data.value !== undefined) {
         const lightPercent = Math.max(0, Math.min(100, (data.value / 4095) * 100))
         setLightValue(lightPercent)
+      } else if (data.sensors && Array.isArray(data.sensors)) {
+        const lightSensor = data.sensors.find((sensor: any) => sensor.type === "light" || sensor.id === "light")
+        if (lightSensor) {
+          if (lightSensor.percentage !== undefined) {
+            setLightValue(lightSensor.percentage)
+          } else if (lightSensor.value !== undefined) {
+            const lightPercent = Math.max(0, Math.min(100, (lightSensor.value / 4095) * 100))
+            setLightValue(lightPercent)
+          } else {
+            setError("Light sensor data format not recognized")
+          }
+        } else {
+          setError("Light sensor not found in response")
+        }
       } else {
         setError("Could not find valid light sensor data in response")
       }
@@ -72,10 +86,9 @@ export default function LightSensorWidget({ widget, deviceIp, onDelete }: LightS
   }
 
   const backgroundRefresh = () => {
-    isRefreshing.current = true 
+    isRefreshing.current = true
     fetchLightData()
   }
-
 
   useEffect(() => {
     if (deviceIp) {

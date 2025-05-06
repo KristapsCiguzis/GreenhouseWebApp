@@ -308,7 +308,6 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
-          {/* ESP32 Device Selection */}
           <div>
             <Label htmlFor="esp32-select">Select ESP32 Device</Label>
             <Select onValueChange={handleEsp32Selection} value={selectedEsp32Ip || ""}>

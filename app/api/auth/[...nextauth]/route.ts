@@ -16,15 +16,15 @@ const handler = NextAuth({
   ],
   pages: {
     signIn: "/login",
-    error: "/login", 
+    error: "/login", // Add error page redirection
   },
-  debug: process.env.NODE_ENV === "development", 
+  debug: process.env.NODE_ENV === "development", // Enable debug in development
   callbacks: {
     async signIn({ user, account }) {
       if (!user.email) return false
 
       try {
-       
+        // Check if user exists in Supabase
         const { data: existingUser, error: fetchError } = await supabase
           .from("profiles")
           .select("*")
@@ -36,14 +36,15 @@ const handler = NextAuth({
           return false
         }
 
+        // If user doesn't exist, create a new profile
         if (!existingUser) {
-       
+          // Remove avatar_url from the insert
           const { error: insertError } = await supabase.from("profiles").insert([
             {
               user_id: user.id,
               email: user.email,
               name: user.name,
-        
+              // avatar_url field removed
             },
           ])
 

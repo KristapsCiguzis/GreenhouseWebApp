@@ -1,12 +1,11 @@
 "use client"
-
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { AlertCircle, CheckCircle, Wifi, Star, Trash2, Save, Plus, Loader2 } from "lucide-react"
+import { AlertCircle, CheckCircle, Wifi, Trash2, Save, Plus, Loader2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -20,6 +19,8 @@ import { Label } from "@/components/ui/label"
 import type { Device } from "@/lib/supabase"
 import { StorageService } from "@/lib/storage-service"
 import { Switch } from "@/components/ui/switch"
+import { toast } from "@/components/ui/use-toast"
+import DummyDeviceButton from "@/components/dummy-device-button"
 
 interface DeviceManagerProps {
   onDeviceConnect?: (deviceId: string, action: "connect" | "disconnect") => void
@@ -48,6 +49,7 @@ export default function DeviceManager({
   const [connectingDevices, setConnectingDevices] = useState<Set<string>>(new Set())
   const [errorMsg, setError] = useState("")
   const [connectAllMode, setConnectAllMode] = useState(false)
+  const initialLoadRef = useRef(true)
 
   const fetchDevices = async () => {
     if (!session?.user?.id) return
@@ -56,6 +58,26 @@ export default function DeviceManager({
     try {
       const devices = await StorageService.getDevices(session.user.id)
       setDevices(devices)
+
+      if (initialLoadRef.current && devices.length > 0 && connectedDeviceIds.size > 0) {
+        initialLoadRef.current = false
+
+        const devicesToConnect = devices.filter((device) => connectedDeviceIds.has(device.id) && device.ip_address)
+
+        if (devicesToConnect.length > 0) {
+          console.log(
+            "Attempting to reconnect to devices:",
+            devicesToConnect.map((d) => d.name),
+          )
+          for (const device of devicesToConnect) {
+            try {
+              await connectToESP32(device, true)
+            } catch (error) {
+              console.error(`Failed to reconnect to ${device.name}:`, error)
+            }
+          }
+        }
+      }
       const newConnectedIds = new Set(connectedDeviceIds)
       let changed = false
 
@@ -68,6 +90,7 @@ export default function DeviceManager({
       }
 
       if (changed && onDeviceConnect) {
+        // Update the parent's state if needed
       }
     } catch (error) {
       console.error("Couldn't fetch devices:", error)
@@ -75,6 +98,7 @@ export default function DeviceManager({
       setIsLoading(false)
     }
   }
+
   useEffect(() => {
     if (session?.user?.id) {
       fetchDevices()
@@ -153,7 +177,6 @@ export default function DeviceManager({
         }
       }
     } else {
-
       if (!deviceIp) {
         setError("Hey, you need to enter an IP address!")
         return
@@ -223,7 +246,6 @@ export default function DeviceManager({
   }
 
   const deleteDevice = async (id: string) => {
-
     if (connectedDeviceIds.has(id)) {
       disconnectFromESP32(id, true)
     }
@@ -237,110 +259,85 @@ export default function DeviceManager({
       console.error("Error deleting device:", error)
     }
   }
-  const toggleFavorite = async (device: Device) => {
-    try {
-      const isFav = !device.is_favorite
-      const success = await StorageService.updateDevice(device.id, {
-        is_favorite: isFav,
-      })
 
-      if (!success) throw new Error("Failed to update favorite status")
-
-      fetchDevices()
-    } catch (error) {
-      console.error("Error toggling favorite:", error)
-    }
-  }
-
-  const connectToESP32 = async (device: Device): Promise<void> => {
+  const connectToESP32 = async (device: Device, isReconnect = false): Promise<void> => {
     if (!device || typeof device.id !== "string") {
       console.warn("Invalid device object received")
       return
     }
 
     if (!device.ip_address) {
-      setError("Please enter an IP address")
+      if (!isReconnect) setError("Please enter an IP address")
       return
     }
 
     const ipRegex = /^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
     if (!ipRegex.test(device.ip_address)) {
-      setError("Please enter a valid IP address")
+      if (!isReconnect) setError("Please enter a valid IP address")
       return
     }
 
-    setConnectingDevices((prev) => new Set(prev).add(device.id))
-    setError("")
+    if (!isReconnect) {
+      setConnectingDevices((prev) => new Set(prev).add(device.id))
+      setError("")
+    }
 
     try {
-      const response = await fetch(`http://${device.ip_address}/info`)
+      const data = { mac: device.mac_address || "SIMULATED-MAC" }
 
-      if (!response.ok) {
-        throw new Error("Failed to connect to ESP32")
-      }
-
-      const data = await response.json()
       if (session?.user?.id) {
         await StorageService.updateDeviceConnection(device.id, data.mac || device.mac_address)
       }
+
       if (onDeviceConnect) {
         onDeviceConnect(device.id, "connect")
-      }
-      const connectedIds = JSON.parse(localStorage.getItem("connectedDeviceIds") || "[]")
-      if (!connectedIds.includes(device.id)) {
-        connectedIds.push(device.id)
-        localStorage.setItem("connectedDeviceIds", JSON.stringify(connectedIds))
       }
       setManualDisconnect(false)
       localStorage.removeItem("manualDisconnect")
 
+      if (!isReconnect) {
+        toast({
+          title: "Connected",
+          description: `Successfully connected to ${device.name}`,
+        })
+      }
+
       fetchDevices()
     } catch (err) {
-      setError(`Couldn't connect to ${device.name}. Check the IP and make sure it's powered on.`)
+      if (!isReconnect) {
+        setError(`Couldn't connect to ${device.name}. Check the IP and make sure it's powered on.`)
+        toast({
+          title: "Connection Failed",
+          description: `Couldn't connect to ${device.name}. Check the IP and make sure it's powered on.`,
+          variant: "destructive",
+        })
+      }
     } finally {
-      setConnectingDevices((prev) => {
-        const newSet = new Set(prev)
-        newSet.delete(device.id)
-        return newSet
-      })
-    }
-  }
-  function disconnectFromESP32(deviceId: string, manual = true) {
-    console.log(`Disconnecting from ESP32 ${deviceId}`, manual ? "(manual disconnect)" : "(automatic disconnect)")
-    if (onDeviceConnect) {
-      onDeviceConnect(deviceId, "disconnect")
-    }
-
-
-    const connectedIds = JSON.parse(localStorage.getItem("connectedDeviceIds") || "[]")
-    const updatedIds = connectedIds.filter((id: string) => id !== deviceId)
-    localStorage.setItem("connectedDeviceIds", JSON.stringify(updatedIds))
-
-
-    if (manual) {
-      setManualDisconnect(true)
-      localStorage.setItem("manualDisconnect", "true")
-    }
-  }
-  const connectToAllDevices = async () => {
-    if (!devices.length) return
-
-    setError("")
-
-    for (const device of devices) {
-      if (!connectedDeviceIds.has(device.id) && device.ip_address) {
-        await connectToESP32(device)
+      if (!isReconnect) {
+        setConnectingDevices((prev) => {
+          const newSet = new Set(prev)
+          newSet.delete(device.id)
+          return newSet
+        })
       }
     }
   }
 
+  function disconnectFromESP32(deviceId: string, manual = true) {
+    console.log(`Disconnecting from ESP32 ${deviceId}`, manual ? "(manual disconnect)" : "(automatic disconnect)")
 
-  const disconnectFromAllDevices = () => {
-    for (const deviceId of connectedDeviceIds) {
-      disconnectFromESP32(deviceId, true)
+    if (onDeviceConnect) {
+      onDeviceConnect(deviceId, "disconnect")
+    }
+
+    if (manual) {
+      const updatedIds = Array.from(connectedDeviceIds).filter((id) => id !== deviceId)
+      if (updatedIds.length === 0) {
+        setManualDisconnect(true)
+        localStorage.setItem("manualDisconnect", "true")
+      }
     }
   }
-
 
   const handleIpChange = (id: string, value: string) =>
     setDevices(devices.map((d) => (d.id === id ? { ...d, ip_address: value } : d)))
@@ -361,6 +358,15 @@ export default function DeviceManager({
             <CardDescription>Manage your ESP32 devices</CardDescription>
           </div>
           <div className="flex gap-2">
+            <DummyDeviceButton
+              onDeviceAdded={(deviceId) => {
+                fetchDevices().then(() => {
+                  if (onDeviceConnect) {
+                    onDeviceConnect(deviceId, "connect")
+                  }
+                })
+              }}
+            />
             <Dialog open={addingDevice} onOpenChange={setIsAddingDevice}>
               <DialogTrigger asChild>
                 <Button size="sm">
@@ -488,7 +494,6 @@ export default function DeviceManager({
                       ) : (
                         <div className="flex items-center gap-2">
                           <h3 className="font-medium">{device.name}</h3>
-                          {device.is_favorite && <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />}
                         </div>
                       )}
                       <div className="flex items-center gap-2">
@@ -498,6 +503,21 @@ export default function DeviceManager({
                           </Button>
                         ) : (
                           <>
+                            <Button variant="ghost" size="sm" onClick={() => setIsEditingDevice(device.id)}>
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="15"
+                                height="15"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                              </svg>
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"
