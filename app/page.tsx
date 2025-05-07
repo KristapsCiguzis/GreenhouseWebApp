@@ -20,18 +20,17 @@ interface Device {
   user_id: string
   name: string
   ip_address: string
-
 }
 
 function ESP32Dashboard() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [currentTab, setActiveTab] = useState<string>("devices")
+  const [currentTab, setActiveTab] = useState<string>("widgets") // Changed default tab to widgets
   const [connectedDeviceIds, setConnectedDeviceIds] = useState<Set<string>>(new Set())
   const [connectedDevices, setConnectedDevices] = useState<Map<string, any>>(new Map())
   const [hasConnections, setHasConnections] = useState<boolean>(false)
   const [reconnecting, setIsReconnecting] = useState<boolean>(false)
-  const [showSettings, setShowSettings] = useState<boolean>(false) 
+  const [showSettings, setShowSettings] = useState<boolean>(false)
   const [manualDisconnect, setManualDisconnect] = useState<boolean>(false)
   const initialLoadRef = useRef(true)
   const [devices, setDevices] = useState<Device[]>([])
@@ -57,6 +56,10 @@ function ESP32Dashboard() {
             console.log("Loaded connected devices from localStorage:", parsedDevices)
           }
         }
+
+        // Check if there was a manual disconnect
+        const wasManualDisconnect = localStorage.getItem("manualDisconnect") === "true"
+        setManualDisconnect(wasManualDisconnect)
       } catch (error) {
         console.error("Error loading connected devices from localStorage:", error)
       }
@@ -64,7 +67,7 @@ function ESP32Dashboard() {
   }, [status])
 
   useEffect(() => {
-    if (initialLoadRef.current) return 
+    if (initialLoadRef.current) return
 
     if (connectedDeviceIds.size > 0) {
       const deviceArray = Array.from(connectedDeviceIds)
@@ -72,7 +75,7 @@ function ESP32Dashboard() {
       console.log("Saved connected devices to localStorage:", deviceArray)
     } else {
       localStorage.removeItem("connectedDevices")
-      setConnectedDevices(new Map()) 
+      setConnectedDevices(new Map())
     }
   }, [connectedDeviceIds])
 
@@ -82,7 +85,6 @@ function ESP32Dashboard() {
         setConnectedDevices(new Map())
         return
       }
-
 
       const newConnectedDevices = new Map()
       for (const deviceId of connectedDeviceIds) {
@@ -161,6 +163,7 @@ function ESP32Dashboard() {
       }
     }
   }, [])
+
   useEffect(() => {
     const fetchAllDevices = async () => {
       if (!session?.user?.id) return
@@ -185,8 +188,16 @@ function ESP32Dashboard() {
 
     if (action === "connect") {
       newConnectedIds.add(deviceId)
+      // Always clear manual disconnect flag when connecting to any device
       localStorage.removeItem("manualDisconnect")
       setManualDisconnect(false)
+
+      // If this is the dummy device, ensure the mock fetch middleware is set up
+      const dummyDevice = devices.find((d) => d.id === deviceId && d.ip_address === "192.168.1.200")
+      if (dummyDevice) {
+        console.log("Setting up mock fetch for dummy device in handleDeviceConnect")
+        setupMockFetch()
+      }
     } else {
       newConnectedIds.delete(deviceId)
     }
@@ -218,7 +229,6 @@ function ESP32Dashboard() {
           </Button>
         </div>
       </div>
-
 
       <Tabs value={currentTab} onValueChange={setActiveTab} className="mb-6">
         <TabsList className="grid w-full grid-cols-3">

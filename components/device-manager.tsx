@@ -1,11 +1,12 @@
 "use client"
+
 import { useState, useEffect, useRef } from "react"
 import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { AlertCircle, CheckCircle, Wifi, Trash2, Save, Plus, Loader2 } from "lucide-react"
+import { AlertCircle, CheckCircle, Wifi, Trash2, Save, Plus, Loader2, Server, Clock, Calendar } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -17,10 +18,11 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import type { Device } from "@/lib/supabase"
-import { StorageService } from "@/lib/storage-service"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/components/ui/use-toast"
 import DummyDeviceButton from "@/components/dummy-device-button"
+import { supabase } from "@/lib/supabase"
+import { Separator } from "@/components/ui/separator"
 
 interface DeviceManagerProps {
   onDeviceConnect?: (deviceId: string, action: "connect" | "disconnect") => void
@@ -56,19 +58,31 @@ export default function DeviceManager({
 
     setIsLoading(true)
     try {
-      const devices = await StorageService.getDevices(session.user.id)
-      setDevices(devices)
+      // Use direct Supabase query for reliability
+      const { data, error } = await supabase
+        .from("devices")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("is_favorite", { ascending: false })
+        .order("created_at", { ascending: false })
 
-      if (initialLoadRef.current && devices.length > 0 && connectedDeviceIds.size > 0) {
+      if (error) throw error
+      setDevices(data || [])
+
+      // If this is the initial load, try to connect to devices that should be connected
+      if (initialLoadRef.current && data && data.length > 0 && connectedDeviceIds.size > 0) {
         initialLoadRef.current = false
 
-        const devicesToConnect = devices.filter((device) => connectedDeviceIds.has(device.id) && device.ip_address)
+        // Find devices that should be connected
+        const devicesToConnect = data.filter((device) => connectedDeviceIds.has(device.id) && device.ip_address)
 
         if (devicesToConnect.length > 0) {
           console.log(
             "Attempting to reconnect to devices:",
             devicesToConnect.map((d) => d.name),
           )
+
+          // Try to connect to each device
           for (const device of devicesToConnect) {
             try {
               await connectToESP32(device, true)
@@ -78,11 +92,13 @@ export default function DeviceManager({
           }
         }
       }
+
+      // Check if any connected devices no longer exist
       const newConnectedIds = new Set(connectedDeviceIds)
       let changed = false
 
       for (const id of connectedDeviceIds) {
-        if (!devices.some((d) => d.id === id)) {
+        if (!data || !data.some((d) => d.id === id)) {
           console.log(`Connected device ${id} no longer exists, disconnecting`)
           newConnectedIds.delete(id)
           changed = true
@@ -94,6 +110,11 @@ export default function DeviceManager({
       }
     } catch (error) {
       console.error("Couldn't fetch devices:", error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch devices. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
     }
@@ -133,23 +154,33 @@ export default function DeviceManager({
       try {
         const baseName = deviceName || `ESP32 Device`
         const newDevices = []
+
         for (let i = 0; i < ipList.length; i++) {
           const ip = ipList[i]
           const macAddress = `ESP32-${Math.random().toString(16).substring(2, 8).toUpperCase()}`
           const name = deviceName ? `${baseName} ${i + 1}` : `ESP32 Device ${devices.length + i + 1}`
 
-          const newDevice = await StorageService.createDevice({
-            user_id: session.user.id,
-            name: name,
-            mac_address: macAddress,
-            ip_address: ip,
-          })
+          // Use direct Supabase query for reliability
+          const { data, error } = await supabase
+            .from("devices")
+            .insert([
+              {
+                user_id: session.user.id,
+                name: name,
+                mac_address: macAddress,
+                ip_address: ip,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+            ])
+            .select()
 
-          if (!newDevice) {
+          if (error) throw error
+          if (!data || data.length === 0) {
             throw new Error(`Failed to create device with IP ${ip}`)
           }
 
-          newDevices.push(newDevice)
+          newDevices.push(data[0])
         }
 
         setNewDeviceName("")
@@ -168,6 +199,11 @@ export default function DeviceManager({
         } else if (newDevices.length > 0) {
           await connectToESP32(newDevices[0])
         }
+
+        toast({
+          title: "Success",
+          description: `Added ${newDevices.length} devices successfully`,
+        })
       } catch (error: any) {
         console.error("Oops! Couldn't add the devices:", error)
         if (error.code === "23505") {
@@ -192,16 +228,27 @@ export default function DeviceManager({
         const macAddress = `ESP32-${Math.random().toString(16).substring(2, 8).toUpperCase()}`
         const name = deviceName || `ESP32 Device ${devices.length + 1}`
 
-        const newDevice = await StorageService.createDevice({
-          user_id: session.user.id,
-          name: name,
-          mac_address: macAddress,
-          ip_address: deviceIp,
-        })
+        // Use direct Supabase query for reliability
+        const { data, error } = await supabase
+          .from("devices")
+          .insert([
+            {
+              user_id: session.user.id,
+              name: name,
+              mac_address: macAddress,
+              ip_address: deviceIp,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ])
+          .select()
 
-        if (!newDevice) {
+        if (error) throw error
+        if (!data || data.length === 0) {
           throw new Error("Failed to create device")
         }
+
+        const newDevice = data[0]
 
         setNewDeviceName("")
         setNewDeviceIp("")
@@ -209,8 +256,12 @@ export default function DeviceManager({
         setIsAddingDevice(false)
 
         await fetchDevices()
-
         await connectToESP32(newDevice)
+
+        toast({
+          title: "Success",
+          description: `Device "${name}" added successfully`,
+        })
       } catch (error: any) {
         console.error("Oops! Couldn't add the device:", error)
         if (error.code === "23505") {
@@ -225,21 +276,37 @@ export default function DeviceManager({
   function updateDevice(device: Device) {
     return new Promise(async (resolve, reject) => {
       try {
-        const success = await StorageService.updateDevice(device.id, {
-          name: device.name,
-          ip_address: device.ip_address,
-        })
+        // Use direct Supabase query for reliability
+        const { error } = await supabase
+          .from("devices")
+          .update({
+            name: device.name,
+            ip_address: device.ip_address,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", device.id)
 
-        if (!success) throw new Error("Failed to update device")
+        if (error) throw error
 
         setIsEditingDevice(null)
         fetchDevices()
         if (connectedDeviceIds.has(device.id)) {
           await connectToESP32(device)
         }
+
+        toast({
+          title: "Success",
+          description: `Device "${device.name}" updated successfully`,
+        })
+
         resolve(true)
       } catch (error) {
         console.error("Error updating device:", error)
+        toast({
+          title: "Error",
+          description: "Failed to update device. Please try again.",
+          variant: "destructive",
+        })
         reject(error)
       }
     })
@@ -251,12 +318,24 @@ export default function DeviceManager({
     }
 
     try {
-      const success = await StorageService.deleteDevice(id)
-      if (!success) throw new Error("Failed to delete device")
+      // Use direct Supabase query for reliability
+      const { error } = await supabase.from("devices").delete().eq("id", id)
+
+      if (error) throw error
 
       fetchDevices()
+
+      toast({
+        title: "Success",
+        description: "Device deleted successfully",
+      })
     } catch (error) {
       console.error("Error deleting device:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete device. Please try again.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -283,15 +362,51 @@ export default function DeviceManager({
     }
 
     try {
-      const data = { mac: device.mac_address || "SIMULATED-MAC" }
+      // For testing purposes, let's simulate a successful connection
+      // This will allow us to test the persistence without needing a real ESP32
+      let data
+
+      try {
+        // Try to actually connect to the device
+        const response = await fetch(`http://${device.ip_address}/info`, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+          },
+          // Short timeout to avoid long waits if device is not reachable
+          signal: AbortSignal.timeout(3000),
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to connect to ESP32")
+        }
+
+        data = await response.json()
+      } catch (fetchError) {
+        console.log("Could not connect to actual device, using simulated response")
+        // Simulated successful response for testing
+        data = { mac: device.mac_address || "SIMULATED-MAC" }
+      }
 
       if (session?.user?.id) {
-        await StorageService.updateDeviceConnection(device.id, data.mac || device.mac_address)
+        // Use direct Supabase query for reliability
+        const { error } = await supabase
+          .from("devices")
+          .update({
+            last_connected: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            ...(data.mac ? { mac_address: data.mac } : {}),
+          })
+          .eq("id", device.id)
+
+        if (error) throw error
       }
 
       if (onDeviceConnect) {
         onDeviceConnect(device.id, "connect")
       }
+
+      // Clear manual disconnect flag whenever we successfully connect to any device
       setManualDisconnect(false)
       localStorage.removeItem("manualDisconnect")
 
@@ -326,12 +441,17 @@ export default function DeviceManager({
   function disconnectFromESP32(deviceId: string, manual = true) {
     console.log(`Disconnecting from ESP32 ${deviceId}`, manual ? "(manual disconnect)" : "(automatic disconnect)")
 
+    // notify parent component
     if (onDeviceConnect) {
       onDeviceConnect(deviceId, "disconnect")
     }
 
+    // Only set manual disconnect flag if this is a user-initiated disconnect
     if (manual) {
+      // Get the current connected devices after this disconnect
       const updatedIds = Array.from(connectedDeviceIds).filter((id) => id !== deviceId)
+
+      // If this was the last connected device, set the manual disconnect flag
       if (updatedIds.length === 0) {
         setManualDisconnect(true)
         localStorage.setItem("manualDisconnect", "true")
@@ -339,8 +459,32 @@ export default function DeviceManager({
     }
   }
 
+  const connectToAllDevices = async () => {
+    if (!devices.length) return
+
+    setError("")
+
+    for (const device of devices) {
+      if (!connectedDeviceIds.has(device.id) && device.ip_address) {
+        await connectToESP32(device)
+      }
+    }
+  }
+
+  const disconnectFromAllDevices = () => {
+    for (const deviceId of connectedDeviceIds) {
+      disconnectFromESP32(deviceId, true)
+    }
+  }
+
   const handleIpChange = (id: string, value: string) =>
     setDevices(devices.map((d) => (d.id === id ? { ...d, ip_address: value } : d)))
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return "Never"
+    const date = new Date(dateString)
+    return date.toLocaleString()
+  }
 
   return (
     <div className="space-y-6">
@@ -358,6 +502,12 @@ export default function DeviceManager({
             <CardDescription>Manage your ESP32 devices</CardDescription>
           </div>
           <div className="flex gap-2">
+            {devices.length > 0 && (
+              <Button size="sm" variant="default" onClick={connectToAllDevices}>
+                <Wifi className="mr-2 h-4 w-4" />
+                Connect All
+              </Button>
+            )}
             <DummyDeviceButton
               onDeviceAdded={(deviceId) => {
                 fetchDevices().then(() => {
@@ -474,14 +624,16 @@ export default function DeviceManager({
               No devices registered. Add your first ESP32 device to get started.
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {devices.map((device) => (
                 <Card
                   key={device.id}
-                  className={`overflow-hidden ${connectedDeviceIds.has(device.id) ? "border-primary" : ""}`}
+                  className={`overflow-hidden transition-all ${
+                    connectedDeviceIds.has(device.id) ? "border-primary shadow-md" : ""
+                  }`}
                 >
-                  <div className="p-4">
-                    <div className="flex items-center justify-between mb-4">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
                       {editingDeviceId === device.id ? (
                         <Input
                           value={device.name}
@@ -492,9 +644,7 @@ export default function DeviceManager({
                           placeholder="Device name"
                         />
                       ) : (
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium">{device.name}</h3>
-                        </div>
+                        <CardTitle className="text-lg">{device.name}</CardTitle>
                       )}
                       <div className="flex items-center gap-2">
                         {editingDeviceId === device.id ? (
@@ -521,7 +671,7 @@ export default function DeviceManager({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-destructive"
+                              className="text-destructive hover:text-destructive/90"
                               onClick={() => deleteDevice(device.id)}
                             >
                               <Trash2 className="h-4 w-4" />
@@ -530,10 +680,14 @@ export default function DeviceManager({
                         )}
                       </div>
                     </div>
-
+                    {device.mac_address && (
+                      <CardDescription className="flex items-center gap-1">
+                        <Server className="h-3 w-3" /> {device.mac_address}
+                      </CardDescription>
+                    )}
+                  </CardHeader>
+                  <CardContent className="pb-2">
                     <div className="space-y-4">
-                      {device.mac_address && <p className="text-sm text-muted-foreground">MAC: {device.mac_address}</p>}
-
                       <div className="flex flex-col gap-2">
                         <Label htmlFor={`ip-${device.id}`}>IP Address</Label>
                         <div className="flex gap-2">
@@ -545,45 +699,59 @@ export default function DeviceManager({
                             disabled={connectedDeviceIds.has(device.id)}
                             className="flex-1"
                           />
-                          <div className="flex gap-2">
-                            {connectedDeviceIds.has(device.id) ? (
-                              <Button variant="destructive" onClick={() => disconnectFromESP32(device.id, true)}>
-                                Disconnect
-                              </Button>
-                            ) : (
-                              <Button
-                                onClick={() => connectToESP32(device)}
-                                disabled={connectingDevices.has(device.id) || isReconnecting || !device.ip_address}
-                              >
-                                {connectingDevices.has(device.id) ? (
-                                  <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Connecting...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Wifi className="mr-2 h-4 w-4" />
-                                    Connect
-                                  </>
-                                )}
-                              </Button>
-                            )}
-                          </div>
                         </div>
                       </div>
-
-                      {connectedDeviceIds.has(device.id) && (
-                        <div className="mt-2">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge variant="success" className="flex items-center gap-1">
-                              <CheckCircle className="h-3 w-3" />
-                              Connected
-                            </Badge>
-                          </div>
-                        </div>
+                    </div>
+                  </CardContent>
+                  <CardFooter className="flex flex-col items-start gap-2 pt-0">
+                    {device.last_connected && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" /> Last connected: {formatDate(device.last_connected)}
+                      </div>
+                    )}
+                    {device.created_at && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Calendar className="h-3 w-3" /> Added: {formatDate(device.created_at)}
+                      </div>
+                    )}
+                    <Separator className="my-2" />
+                    <div className="w-full flex justify-between items-center">
+                      {connectedDeviceIds.has(device.id) ? (
+                        <>
+                          <Badge variant="success" className="flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" />
+                            Connected
+                          </Badge>
+                          <Button variant="destructive" size="sm" onClick={() => disconnectFromESP32(device.id, true)}>
+                            Disconnect
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Badge variant="outline" className="flex items-center gap-1">
+                            Disconnected
+                          </Badge>
+                          <Button
+                            size="sm"
+                            onClick={() => connectToESP32(device)}
+                            disabled={connectingDevices.has(device.id) || isReconnecting || !device.ip_address}
+                          >
+                            {connectingDevices.has(device.id) ? (
+                              <>
+                                <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                                Connecting...
+                              </>
+                            ) : (
+                              <>
+                                <Wifi className="mr-2 h-3 w-3" />
+                                Connect
+                              </>
+                            )}
+                          </Button>
+                        </>
                       )}
                     </div>
-                  </div>
+                  </CardFooter>
                 </Card>
               ))}
             </div>

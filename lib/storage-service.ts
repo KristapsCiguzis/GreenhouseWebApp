@@ -1,10 +1,7 @@
 import { supabase } from "@/lib/supabase"
 import type { Device, ApiKey, Widget, Profile } from "@/lib/supabase"
 
-
 export class StorageService {
-
-
   static async getDevices(userId: string): Promise<Device[]> {
     try {
       const { data, error } = await supabase
@@ -41,13 +38,31 @@ export class StorageService {
 
   static async createDevice(device: Partial<Device>): Promise<Device | null> {
     try {
-      const { data, error } = await supabase.from("devices").insert([device]).select()
+      console.log("Creating device with data:", device)
 
-      if (error) throw error
-      return data?.[0] || null
+      // Ensure we have created_at and updated_at fields
+      const deviceWithTimestamps = {
+        ...device,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+
+      const { data, error } = await supabase.from("devices").insert([deviceWithTimestamps]).select()
+
+      if (error) {
+        console.error("Supabase error creating device:", error)
+        throw error
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error("No data returned from device creation")
+      }
+
+      console.log("Device created successfully:", data[0])
+      return data[0]
     } catch (error) {
       console.error("Error creating device:", error)
-      return null
+      throw error // Re-throw to allow proper error handling in the component
     }
   }
 
@@ -125,7 +140,6 @@ export class StorageService {
       const existingKey = await this.getApiKeyForDevice(userId, deviceMac)
 
       if (existingKey) {
-       
         const { data, error } = await supabase
           .from("api_keys")
           .update({

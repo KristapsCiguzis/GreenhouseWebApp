@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/use-toast"
 import { setupMockFetch } from "@/lib/mock-fetch-middleware"
-import { StorageService } from "@/lib/storage-service"
 import { useSession } from "next-auth/react"
+import { StorageService } from "@/lib/storage-service"
 
 interface DummyDeviceButtonProps {
   onDeviceAdded: (deviceId: string) => void
@@ -14,14 +14,6 @@ interface DummyDeviceButtonProps {
 export default function DummyDeviceButton({ onDeviceAdded }: DummyDeviceButtonProps) {
   const { data: session } = useSession()
   const [adding, setAdding] = useState(false)
-  const [cleanup, setCleanup] = useState<(() => void) | null>(null)
-  useEffect(() => {
-    return () => {
-      if (cleanup) {
-        cleanup()
-      }
-    }
-  }, [cleanup])
 
   const addDummyDevice = async () => {
     if (!session?.user?.id) {
@@ -36,50 +28,52 @@ export default function DummyDeviceButton({ onDeviceAdded }: DummyDeviceButtonPr
     setAdding(true)
 
     try {
+      console.log("Setting up mock fetch...")
       if (typeof window !== "undefined") {
-        const cleanupFn = setupMockFetch()
-        if (cleanupFn) {
-          setCleanup(() => cleanupFn)
-        }
+        setupMockFetch()
       }
+
+      console.log("Creating dummy device...")
+      const uniqueMac = `DUMMY-ESP32-${Date.now().toString(16)}`
 
       const dummyDevice = await StorageService.createDevice({
         user_id: session.user.id,
         name: "Dummy ESP32",
-        mac_address: "DUMMY-ESP32-MAC",
-        ip_address: "192.168.1.200",
+        mac_address: uniqueMac,
+        ip_address: "192.168.1.200", 
         is_favorite: false,
       })
 
+      console.log("Dummy device created:", dummyDevice)
+
       if (!dummyDevice) {
-        throw new Error("Failed to create dummy device")
+        throw new Error("Failed to create dummy device - no device returned")
       }
 
       toast({
         title: "Success",
         description: "Dummy ESP32 device added successfully",
       })
+
       onDeviceAdded(dummyDevice.id)
     } catch (error: any) {
       console.error("Error adding dummy device:", error)
 
-      if (error.code === "23505") {
-        toast({
-          title: "Device Already Exists",
-          description: "A dummy device already exists in your account",
-          variant: "destructive",
-        })
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to add dummy device: " + (error.message || "Unknown error"),
-          variant: "destructive",
-        })
+      let errorMessage = "Unknown error"
+
+      if (error && error.message) {
+        errorMessage = error.message
+      } else if (error && error.code === "23505") {
+        errorMessage = "A dummy device already exists in your account"
+      } else if (error && typeof error === "object") {
+        errorMessage = JSON.stringify(error)
       }
-      if (cleanup) {
-        cleanup()
-        setCleanup(null)
-      }
+
+      toast({
+        title: "Error",
+        description: "Failed to add dummy device: " + errorMessage,
+        variant: "destructive",
+      })
     } finally {
       setAdding(false)
     }

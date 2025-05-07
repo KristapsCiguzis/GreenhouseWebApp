@@ -38,7 +38,6 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
   const [pinNumber, setPinNumber] = useState(widget.pin?.toString() || "5")
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsSaved, setSettingsSaved] = useState(false)
-  // Initialize activeTab based on saved autoMode configuration
   const [activeTab, setActiveTab] = useState(widget.configuration?.autoMode ? "auto" : "manual")
   const [autoMode, setAutoMode] = useState(widget.configuration?.autoMode || false)
   const [minMoistureLevel, setMinMoistureLevel] = useState(widget.configuration?.minMoistureLevel || 30)
@@ -56,7 +55,6 @@ export default function WaterPumpWidget({ widget, deviceIp, onDelete }: WaterPum
   const pumpTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
-    // Initialize state based on current mode and saved configuration
     if (widget.configuration?.state) {
       if (autoMode) {
         setAutoPumpState(widget.configuration.state)
