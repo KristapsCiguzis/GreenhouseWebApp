@@ -259,7 +259,7 @@ export default function WebcamWidget({ widget, deviceIp, onDelete }: WebcamWidge
           </CardTitle>
           <Badge>camera</Badge>
         </div>
-        <CardDescription>ESP32-CAM Stream with Object Detection</CardDescription>
+        <CardDescription>Ripe pepper detector</CardDescription>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col">
         <div className="space-y-4">

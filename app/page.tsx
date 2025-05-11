@@ -1,4 +1,3 @@
-// app/page.tsx
 "use client"
 
 import { useState, useEffect, useRef } from "react"
@@ -25,7 +24,7 @@ interface Device {
 function ESP32Dashboard() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [currentTab, setActiveTab] = useState<string>("widgets") // Changed default tab to widgets
+  const [currentTab, setActiveTab] = useState<string>("widgets") 
   const [connectedDeviceIds, setConnectedDeviceIds] = useState<Set<string>>(new Set())
   const [connectedDevices, setConnectedDevices] = useState<Map<string, any>>(new Map())
   const [hasConnections, setHasConnections] = useState<boolean>(false)
@@ -57,7 +56,6 @@ function ESP32Dashboard() {
           }
         }
 
-        // Check if there was a manual disconnect
         const wasManualDisconnect = localStorage.getItem("manualDisconnect") === "true"
         setManualDisconnect(wasManualDisconnect)
       } catch (error) {
@@ -188,11 +186,9 @@ function ESP32Dashboard() {
 
     if (action === "connect") {
       newConnectedIds.add(deviceId)
-      // Always clear manual disconnect flag when connecting to any device
       localStorage.removeItem("manualDisconnect")
       setManualDisconnect(false)
 
-      // If this is the dummy device, ensure the mock fetch middleware is set up
       const dummyDevice = devices.find((d) => d.id === deviceId && d.ip_address === "192.168.1.200")
       if (dummyDevice) {
         console.log("Setting up mock fetch for dummy device in handleDeviceConnect")
