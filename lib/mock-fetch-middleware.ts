@@ -5,7 +5,7 @@ let originalFetch: typeof fetch | null = null
 const mockData = {
   info: {
     status: "online",
-    mac: "DUMMY-ESP32-MAC",
+    mac: "DUMMY-ESP32-MAC", 
     ip: "192.168.1.200",
     device: "ESP32-DUMMY",
     uptime: 3600,
@@ -69,7 +69,10 @@ export function setupMockFetch() {
   }
 
   if (!originalFetch) {
+    console.log("Saving original fetch function")
     originalFetch = window.fetch
+  } else {
+    console.log("Original fetch already saved, reusing it")
   }
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {

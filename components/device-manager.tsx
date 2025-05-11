@@ -23,6 +23,7 @@ import { toast } from "@/components/ui/use-toast"
 import DummyDeviceButton from "@/components/dummy-device-button"
 import { supabase } from "@/lib/supabase"
 import { Separator } from "@/components/ui/separator"
+import { setupMockFetch } from "@/lib/mock-fetch-middleware"
 
 interface DeviceManagerProps {
   onDeviceConnect?: (deviceId: string, action: "connect" | "disconnect") => void
@@ -159,8 +160,6 @@ export default function DeviceManager({
           const ip = ipList[i]
           const macAddress = `ESP32-${Math.random().toString(16).substring(2, 8).toUpperCase()}`
           const name = deviceName ? `${baseName} ${i + 1}` : `ESP32 Device ${devices.length + i + 1}`
-
-          // Use direct Supabase query for reliability
           const { data, error } = await supabase
             .from("devices")
             .insert([
@@ -228,7 +227,6 @@ export default function DeviceManager({
         const macAddress = `ESP32-${Math.random().toString(16).substring(2, 8).toUpperCase()}`
         const name = deviceName || `ESP32 Device ${devices.length + 1}`
 
-        // Use direct Supabase query for reliability
         const { data, error } = await supabase
           .from("devices")
           .insert([
@@ -276,7 +274,6 @@ export default function DeviceManager({
   function updateDevice(device: Device) {
     return new Promise(async (resolve, reject) => {
       try {
-        // Use direct Supabase query for reliability
         const { error } = await supabase
           .from("devices")
           .update({
@@ -318,7 +315,6 @@ export default function DeviceManager({
     }
 
     try {
-      // Use direct Supabase query for reliability
       const { error } = await supabase.from("devices").delete().eq("id", id)
 
       if (error) throw error
@@ -361,19 +357,26 @@ export default function DeviceManager({
       setError("")
     }
 
+    setManualDisconnect(false)
+    localStorage.removeItem("manualDisconnect")
+
+    const isDummyDevice = device.ip_address === "192.168.1.200"
+
+    if (isDummyDevice) {
+      console.log("Setting up mock fetch for dummy device connection")
+      setupMockFetch()
+    }
+
     try {
-      // For testing purposes, let's simulate a successful connection
-      // This will allow us to test the persistence without needing a real ESP32
       let data
+      let macVerified = false
 
       try {
-        // Try to actually connect to the device
         const response = await fetch(`http://${device.ip_address}/info`, {
           method: "GET",
           headers: {
             Accept: "application/json",
           },
-          // Short timeout to avoid long waits if device is not reachable
           signal: AbortSignal.timeout(3000),
         })
 
@@ -382,14 +385,23 @@ export default function DeviceManager({
         }
 
         data = await response.json()
+        console.log("Connected to device, received data:", data)
+        if (data.mac && typeof data.mac === "string" && data.mac.length > 0) {
+          macVerified = true
+        }
       } catch (fetchError) {
         console.log("Could not connect to actual device, using simulated response")
-        // Simulated successful response for testing
         data = { mac: device.mac_address || "SIMULATED-MAC" }
+
+        if (isDummyDevice) {
+          macVerified = true
+        }
+      }
+      if (!isDummyDevice && !macVerified) {
+        throw new Error("Could not verify device MAC address")
       }
 
       if (session?.user?.id) {
-        // Use direct Supabase query for reliability
         const { error } = await supabase
           .from("devices")
           .update({
@@ -406,10 +418,6 @@ export default function DeviceManager({
         onDeviceConnect(device.id, "connect")
       }
 
-      // Clear manual disconnect flag whenever we successfully connect to any device
-      setManualDisconnect(false)
-      localStorage.removeItem("manualDisconnect")
-
       if (!isReconnect) {
         toast({
           title: "Connected",
@@ -418,12 +426,18 @@ export default function DeviceManager({
       }
 
       fetchDevices()
-    } catch (err) {
+    } catch (err: any) {
+      console.error("Connection error:", err)
       if (!isReconnect) {
-        setError(`Couldn't connect to ${device.name}. Check the IP and make sure it's powered on.`)
+        const errorMessage =
+          err.message === "Could not verify device MAC address"
+            ? `Couldn't connect to ${device.name}. MAC address verification failed.`
+            : `Couldn't connect to ${device.name}. Check the IP and make sure it's powered on.`
+
+        setError(errorMessage)
         toast({
           title: "Connection Failed",
-          description: `Couldn't connect to ${device.name}. Check the IP and make sure it's powered on.`,
+          description: errorMessage,
           variant: "destructive",
         })
       }
@@ -441,17 +455,13 @@ export default function DeviceManager({
   function disconnectFromESP32(deviceId: string, manual = true) {
     console.log(`Disconnecting from ESP32 ${deviceId}`, manual ? "(manual disconnect)" : "(automatic disconnect)")
 
-    // notify parent component
     if (onDeviceConnect) {
       onDeviceConnect(deviceId, "disconnect")
     }
 
-    // Only set manual disconnect flag if this is a user-initiated disconnect
     if (manual) {
-      // Get the current connected devices after this disconnect
       const updatedIds = Array.from(connectedDeviceIds).filter((id) => id !== deviceId)
 
-      // If this was the last connected device, set the manual disconnect flag
       if (updatedIds.length === 0) {
         setManualDisconnect(true)
         localStorage.setItem("manualDisconnect", "true")

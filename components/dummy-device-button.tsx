@@ -2,10 +2,11 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { PlusCircle, Loader2 } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
-import { setupMockFetch } from "@/lib/mock-fetch-middleware"
+import { supabase } from "@/lib/supabase"
 import { useSession } from "next-auth/react"
-import { StorageService } from "@/lib/storage-service"
+import { setupMockFetch } from "@/lib/mock-fetch-middleware"
 
 interface DummyDeviceButtonProps {
   onDeviceAdded: (deviceId: string) => void
@@ -13,7 +14,7 @@ interface DummyDeviceButtonProps {
 
 export default function DummyDeviceButton({ onDeviceAdded }: DummyDeviceButtonProps) {
   const { data: session } = useSession()
-  const [adding, setAdding] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   const addDummyDevice = async () => {
     if (!session?.user?.id) {
@@ -25,63 +26,94 @@ export default function DummyDeviceButton({ onDeviceAdded }: DummyDeviceButtonPr
       return
     }
 
-    setAdding(true)
+    setIsLoading(true)
 
     try {
-      console.log("Setting up mock fetch...")
-      if (typeof window !== "undefined") {
-        setupMockFetch()
+      console.log("Setting up mock fetch middleware for dummy device")
+      setupMockFetch()
+
+      localStorage.removeItem("manualDisconnect")
+      const { data: existingDevices, error: fetchError } = await supabase
+        .from("devices")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .eq("ip_address", "192.168.1.200")
+        .limit(1)
+
+      if (fetchError) throw fetchError
+
+      let deviceId
+
+      if (existingDevices && existingDevices.length > 0) {
+        deviceId = existingDevices[0].id
+        console.log("Dummy device already exists, using existing device:", deviceId)
+        const { error: updateError } = await supabase
+          .from("devices")
+          .update({
+            last_connected: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", deviceId)
+
+        if (updateError) throw updateError
+      } else {
+        const macAddress = `DUMMY-${Math.random().toString(16).substring(2, 8).toUpperCase()}`
+
+        const { data, error } = await supabase
+          .from("devices")
+          .insert([
+            {
+              user_id: session.user.id,
+              name: "Dummy ESP32",
+              mac_address: macAddress,
+              ip_address: "192.168.1.200",
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              last_connected: new Date().toISOString(),
+            },
+          ])
+          .select()
+
+        if (error) throw error
+        if (!data || data.length === 0) {
+          throw new Error("Failed to create dummy device")
+        }
+
+        deviceId = data[0].id
+        console.log("Created new dummy device:", deviceId)
       }
 
-      console.log("Creating dummy device...")
-      const uniqueMac = `DUMMY-ESP32-${Date.now().toString(16)}`
-
-      const dummyDevice = await StorageService.createDevice({
-        user_id: session.user.id,
-        name: "Dummy ESP32",
-        mac_address: uniqueMac,
-        ip_address: "192.168.1.200", 
-        is_favorite: false,
-      })
-
-      console.log("Dummy device created:", dummyDevice)
-
-      if (!dummyDevice) {
-        throw new Error("Failed to create dummy device - no device returned")
-      }
+      onDeviceAdded(deviceId)
 
       toast({
         title: "Success",
-        description: "Dummy ESP32 device added successfully",
+        description: "Dummy device added and connected successfully",
       })
-
-      onDeviceAdded(dummyDevice.id)
     } catch (error: any) {
       console.error("Error adding dummy device:", error)
-
-      let errorMessage = "Unknown error"
-
-      if (error && error.message) {
-        errorMessage = error.message
-      } else if (error && error.code === "23505") {
-        errorMessage = "A dummy device already exists in your account"
-      } else if (error && typeof error === "object") {
-        errorMessage = JSON.stringify(error)
-      }
-
       toast({
         title: "Error",
-        description: "Failed to add dummy device: " + errorMessage,
+        description: `Failed to add dummy device: ${error.message || "Unknown error"}`,
         variant: "destructive",
       })
     } finally {
-      setAdding(false)
+      setIsLoading(false)
     }
   }
 
   return (
-    <Button variant="default" size="sm" onClick={addDummyDevice} disabled={adding}>
-      {adding ? "Adding..." : "Add Dummy Device"}
+    <Button variant="outline" size="sm" onClick={addDummyDevice} disabled={isLoading}>
+      {isLoading ? (
+        <>
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Adding...
+        </>
+      ) : (
+        <>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Add Dummy Device
+        </>
+      )}
     </Button>
   )
 }
