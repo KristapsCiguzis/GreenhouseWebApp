@@ -59,6 +59,7 @@ export default function DeviceManager({
 
     setIsLoading(true)
     try {
+      // Use direct Supabase query for reliability
       const { data, error } = await supabase
         .from("devices")
         .select("*")
@@ -69,9 +70,11 @@ export default function DeviceManager({
       if (error) throw error
       setDevices(data || [])
 
+      // If this is the initial load, try to connect to devices that should be connected
       if (initialLoadRef.current && data && data.length > 0 && connectedDeviceIds.size > 0) {
         initialLoadRef.current = false
 
+        // Find devices that should be connected
         const devicesToConnect = data.filter((device) => connectedDeviceIds.has(device.id) && device.ip_address)
 
         if (devicesToConnect.length > 0) {
@@ -79,6 +82,8 @@ export default function DeviceManager({
             "Attempting to reconnect to devices:",
             devicesToConnect.map((d) => d.name),
           )
+
+          // Try to connect to each device
           for (const device of devicesToConnect) {
             try {
               await connectToESP32(device, true)
@@ -89,6 +94,7 @@ export default function DeviceManager({
         }
       }
 
+      // Check if any connected devices no longer exist
       const newConnectedIds = new Set(connectedDeviceIds)
       let changed = false
 
@@ -101,6 +107,7 @@ export default function DeviceManager({
       }
 
       if (changed && onDeviceConnect) {
+        // Update the parent's state if needed
       }
     } catch (error) {
       console.error("Couldn't fetch devices:", error)

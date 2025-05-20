@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { AlertCircle, Plus, Info } from "lucide-react"
+import { AlertCircle, Plus, Info, ChevronDown, ChevronRight } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -27,7 +27,6 @@ import LightSensorWidget from "@/components/widgets/light-sensor-widget"
 import LightControlWidget from "@/components/widgets/light-control-widget"
 import WebcamWidget from "@/components/widgets/webcam-widget"
 
-
 type WidgetType =
   | "led_controller"
   | "moisture_sensor"
@@ -35,8 +34,7 @@ type WidgetType =
   | "water_pump"
   | "light_sensor"
   | "light_control"
-  | "webcam" 
-
+  | "webcam"
 
 const DEFAULT_PINS = {
   led_controller: "2",
@@ -45,9 +43,8 @@ const DEFAULT_PINS = {
   water_pump: "5",
   light_sensor: "32",
   light_control: "0",
-  webcam: "1", 
+  webcam: "1",
 }
-
 
 const DEFAULT_NAMES = {
   led_controller: "LED Control",
@@ -56,9 +53,8 @@ const DEFAULT_NAMES = {
   water_pump: "Water Pump",
   light_sensor: "Light Sensor",
   light_control: "Light Control",
-  webcam: "ESP32 Camera", 
+  webcam: "ESP32 Camera",
 }
-
 
 const PIN_DESCRIPTIONS = {
   led_controller: "Built-in LED: Pin 2 (controls the onboard LED)",
@@ -67,16 +63,14 @@ const PIN_DESCRIPTIONS = {
   water_pump: "Water Pump Relay: Pin 5",
   light_sensor: "Light Sensor (LDR): Pin 32",
   light_control: "Light Control Relay: Pin 0",
-  webcam: "ESP32-CAM Module", 
+  webcam: "ESP32-CAM Module",
 }
-
 
 const DEFAULT_REFRESH_RATES = {
   moisture_sensor: 10,
   temp_humidity_sensor: 30,
   light_sensor: 5,
 }
-
 
 interface WidgetManagerProps {
   connectedDeviceIds: Set<string>
@@ -94,6 +88,19 @@ export default function WidgetManager({ connectedDeviceIds }: WidgetManagerProps
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("")
   const [errorMsg, setError] = useState("")
   const [ledStatus, setLedStates] = useState<Record<string, boolean>>({})
+  const [collapsedDevices, setCollapsedDevices] = useState<Set<string>>(new Set())
+
+  const toggleDeviceCollapse = (deviceId: string) => {
+    setCollapsedDevices((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(deviceId)) {
+        newSet.delete(deviceId)
+      } else {
+        newSet.add(deviceId)
+      }
+      return newSet
+    })
+  }
 
   const handleWidgetTypeChange = (type: WidgetType) => {
     setWidgetType(type)
@@ -140,7 +147,6 @@ export default function WidgetManager({ connectedDeviceIds }: WidgetManagerProps
     }
   }
 
-
   const checkLedStatus = async () => {
     for (const [deviceId, device] of deviceInfo.entries()) {
       if (!device.ip_address) continue
@@ -148,13 +154,12 @@ export default function WidgetManager({ connectedDeviceIds }: WidgetManagerProps
       try {
         console.log(`Checking LED status from device ${device.name}`)
 
-   
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 5000) 
+        const timeoutId = setTimeout(() => controller.abort(), 5000)
 
         const response = await fetch(`http://${device.ip_address}/led`, {
           signal: controller.signal,
-          cache: "no-store", 
+          cache: "no-store",
         }).catch((err) => {
           clearTimeout(timeoutId)
           throw err
@@ -170,7 +175,6 @@ export default function WidgetManager({ connectedDeviceIds }: WidgetManagerProps
         const data = await response.json()
         console.log(`LED status response from ${device.name}:`, data)
 
- 
         const newLedStates = { ...ledStatus }
         widgetList.forEach((widget) => {
           if (widget.sensor_type === "led_control" && widget.device_mac === device.mac_address) {
@@ -488,22 +492,7 @@ export default function WidgetManager({ connectedDeviceIds }: WidgetManagerProps
     }
   }
 
-  const widgetsByDevice = new Map<string, { device: Device; widgets: Widget[] }>()
-
-  if (widgetList.length > 0) {
-    for (const widget of widgetList) {
-      for (const [deviceId, device] of deviceInfo.entries()) {
-        if (device.mac_address === widget.device_mac) {
-          if (!widgetsByDevice.has(deviceId)) {
-            widgetsByDevice.set(deviceId, { device, widgets: [] })
-          }
-          widgetsByDevice.get(deviceId)?.widgets.push(widget)
-          break
-        }
-      }
-    }
-  }
-
+  // Render the component
   if (connectedDeviceIds.size === 0) {
     return (
       <Card>
@@ -633,88 +622,135 @@ export default function WidgetManager({ connectedDeviceIds }: WidgetManagerProps
         <CardContent>
           {loading ? (
             <div className="text-center p-4">Loading widgets...</div>
-          ) : widgetsByDevice.size === 0 ? (
-            <div className="text-center p-6 text-muted-foreground">
-              No widgets configured. Add your first widget to get started.
-            </div>
           ) : (
             <div className="space-y-8">
-              {Array.from(widgetsByDevice.entries()).map(([deviceId, { device, widgets }]) => (
-                <div key={deviceId} className="space-y-4">
-                  <h3 className="text-lg font-semibold">{device.name}</h3>
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {widgets.map((widget) => {
-                      if (widget.sensor_type === "led_control") {
-                        return (
-                          <LedControlWidget
-                            key={widget.id}
-                            widget={widget}
-                            deviceIp={device.ip_address}
-                            onDelete={deleteWidget}
-                            ledStatus={ledStatus[widget.id] || false}
-                            onToggle={toggleLed}
-                          />
-                        )
-                      } else if (widget.sensor_type === "moisture") {
-                        return (
-                          <MoistureSensorWidget
-                            key={widget.id}
-                            widget={widget}
-                            deviceIp={device.ip_address}
-                            onDelete={deleteWidget}
-                          />
-                        )
-                      } else if (widget.sensor_type === "temperature_humidity") {
-                        return (
-                          <TempHumidityWidget
-                            key={widget.id}
-                            widget={widget}
-                            deviceIp={device.ip_address}
-                            onDelete={deleteWidget}
-                          />
-                        )
-                      } else if (widget.sensor_type === "water_pump") {
-                        return (
-                          <WaterPumpWidget
-                            key={widget.id}
-                            widget={widget}
-                            deviceIp={device.ip_address}
-                            onDelete={deleteWidget}
-                          />
-                        )
-                      } else if (widget.sensor_type === "light") {
-                        return (
-                          <LightSensorWidget
-                            key={widget.id}
-                            widget={widget}
-                            deviceIp={device.ip_address}
-                            onDelete={deleteWidget}
-                          />
-                        )
-                      } else if (widget.sensor_type === "light_control") {
-                        return (
-                          <LightControlWidget
-                            key={widget.id}
-                            widget={widget}
-                            deviceIp={device.ip_address}
-                            onDelete={deleteWidget}
-                          />
-                        )
-                      } else if (widget.sensor_type === "webcam") {
-                        return (
-                          <WebcamWidget
-                            key={widget.id}
-                            widget={widget}
-                            deviceIp={device.ip_address}
-                            onDelete={deleteWidget}
-                          />
-                        )
-                      }
-                      return null
-                    })}
+              {Array.from(deviceInfo.entries()).map(([deviceId, device], index) => {
+                const deviceWidgets = widgetList.filter((widget) => widget.device_mac === device.mac_address)
+                const isCollapsed = collapsedDevices.has(deviceId)
+
+                return (
+                  <div key={deviceId}>
+                    {/* Add separator between devices, but not before the first one */}
+                    {index > 0 && <div className="my-8 border-t border-border" />}
+
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between bg-muted/30 p-3 rounded-md">
+                        <h3 className="text-lg font-semibold">{device.name}</h3>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleDeviceCollapse(deviceId)}
+                          className="h-8 w-8 p-0"
+                        >
+                          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </Button>
+                      </div>
+
+                      {!isCollapsed && (
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                          {/* Display widgets first */}
+                          {deviceWidgets.map((widget) => {
+                            if (widget.sensor_type === "led_control") {
+                              return (
+                                <LedControlWidget
+                                  key={widget.id}
+                                  widget={widget}
+                                  deviceIp={device.ip_address}
+                                  onDelete={deleteWidget}
+                                  ledStatus={ledStatus[widget.id] || false}
+                                  onToggle={toggleLed}
+                                />
+                              )
+                            } else if (widget.sensor_type === "moisture") {
+                              return (
+                                <MoistureSensorWidget
+                                  key={widget.id}
+                                  widget={widget}
+                                  deviceIp={device.ip_address}
+                                  onDelete={deleteWidget}
+                                />
+                              )
+                            } else if (widget.sensor_type === "temperature_humidity") {
+                              return (
+                                <TempHumidityWidget
+                                  key={widget.id}
+                                  widget={widget}
+                                  deviceIp={device.ip_address}
+                                  onDelete={deleteWidget}
+                                />
+                              )
+                            } else if (widget.sensor_type === "water_pump") {
+                              return (
+                                <WaterPumpWidget
+                                  key={widget.id}
+                                  widget={widget}
+                                  deviceIp={device.ip_address}
+                                  onDelete={deleteWidget}
+                                />
+                              )
+                            } else if (widget.sensor_type === "light") {
+                              return (
+                                <LightSensorWidget
+                                  key={widget.id}
+                                  widget={widget}
+                                  deviceIp={device.ip_address}
+                                  onDelete={deleteWidget}
+                                />
+                              )
+                            } else if (widget.sensor_type === "light_control") {
+                              return (
+                                <LightControlWidget
+                                  key={widget.id}
+                                  widget={widget}
+                                  deviceIp={device.ip_address}
+                                  onDelete={deleteWidget}
+                                />
+                              )
+                            } else if (widget.sensor_type === "webcam") {
+                              return (
+                                <WebcamWidget
+                                  key={widget.id}
+                                  widget={widget}
+                                  deviceIp={device.ip_address}
+                                  onDelete={deleteWidget}
+                                />
+                              )
+                            }
+                            return null
+                          })}
+
+                          {/* Add Widget box at the end */}
+                          <Card
+                            className="flex flex-col items-center justify-center h-[300px] border-dashed cursor-pointer hover:bg-muted/50 transition-colors"
+                            onClick={() => {
+                              // Pre-select this device in the dialog
+                              setSelectedDeviceId(deviceId)
+                              setIsAddingWidget(true)
+                            }}
+                          >
+                            <div className="flex flex-col items-center justify-center p-6 text-muted-foreground">
+                              <Plus className="h-12 w-12 mb-2" />
+                              <p className="text-sm font-medium">Add Widget</p>
+                            </div>
+                          </Card>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                )
+              })}
+
+              {deviceInfo.size === 0 && connectedDeviceIds.size > 0 && (
+                <div className="text-center p-6 text-muted-foreground">
+                  <p>Connected devices found, but device information is still loading...</p>
                 </div>
-              ))}
+              )}
+
+              {deviceInfo.size === 0 && connectedDeviceIds.size === 0 && (
+                <div className="text-center p-6 text-muted-foreground">
+                  No devices connected. Please connect to an ESP32 device in the Devices tab.
+                </div>
+              )}
             </div>
           )}
         </CardContent>
