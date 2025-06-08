@@ -30,22 +30,16 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
   const [sendRelayState, setSendRelayState] = useState(true)
   const [sendLightRelayState, setSendLightRelayState] = useState(true)
   const [sendLightAutoMode, setSendLightAutoMode] = useState(true)
-  
-  // Initialize with 1 hour as default
   const [temperatureHours, setTemperatureHours] = useState("1")
   const [humidityHours, setHumidityHours] = useState("1")
   const [soilMoistureHours, setSoilMoistureHours] = useState("1")
   const [lightLevelHours, setLightLevelHours] = useState("1")
-  
-  // For confirmation message
   const [lastSuccess, setLastSuccess] = useState<string | null>(null)
-
-  // Convert milliseconds to hours, rounding to 1 decimal place
+  
   const convertMsToHours = (ms: number) => {
     return (Math.round(ms / 3600000 * 10) / 10).toString()
   }
 
-  // Convert hours to milliseconds
   const convertHoursToMs = (hours: string) => {
     return Math.round(parseFloat(hours) * 3600000)
   }
@@ -75,8 +69,6 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
       setSendRelayState(data.dataConfig?.sendRelayState ?? true)
       setSendLightRelayState(data.dataConfig?.sendLightRelayState ?? true)
       setSendLightAutoMode(data.dataConfig?.sendLightAutoMode ?? true)
-      
-      // Just set everything to 1
       setTemperatureHours("1")
       setHumidityHours("1")
       setSoilMoistureHours("1")
@@ -441,6 +433,7 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
               </div>
             </div>
           </div>
+          
           <div className="space-y-4">
             <Label>Upload Intervals (hours)</Label>
             <div className="grid grid-cols-2 gap-4">
@@ -485,11 +478,13 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
               Minimum interval: 1 hour.
             </p>
           </div>
-          <div className="flex space-x-4">
+          
+          {/* Mobile-friendly button layout */}
+          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
             <Button
               onClick={sendSettingsToEsp32}
               disabled={loading || sendingToEsp32 || clearingConfig}
-              className="flex-1"
+              className="w-full sm:flex-1"
             >
               {sendingToEsp32 ? (
                 <>
@@ -507,7 +502,7 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
               onClick={clearSupabaseConfig}
               disabled={loading || sendingToEsp32 || clearingConfig}
               variant="destructive"
-              className="flex-1"
+              className="w-full sm:flex-1"
             >
               {clearingConfig ? (
                 <>
@@ -517,11 +512,13 @@ export default function DatabaseConnectionManager({ esp32Devices = [] }: Databas
               ) : (
                 <>
                   <Trash2 className="mr-2 h-4 w-4" />
-                  Clear Supabase Config
+                  <span className="hidden xs:inline">Clear Supabase Config</span>
+                  <span className="xs:hidden">Clear Config</span>
                 </>
               )}
             </Button>
           </div>
+          
           {lastSuccess && (
             <div className="text-sm text-green-600 mt-4 text-center">
               {lastSuccess}

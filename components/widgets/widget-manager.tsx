@@ -630,7 +630,6 @@ export default function WidgetManager({ connectedDeviceIds }: WidgetManagerProps
 
                 return (
                   <div key={deviceId}>
-                    {/* Add separator between devices, but not before the first one */}
                     {index > 0 && <div className="my-8 border-t border-border" />}
 
                     <div className="space-y-4">
@@ -648,7 +647,6 @@ export default function WidgetManager({ connectedDeviceIds }: WidgetManagerProps
 
                       {!isCollapsed && (
                         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                          {/* Display widgets first */}
                           {deviceWidgets.map((widget) => {
                             if (widget.sensor_type === "led_control") {
                               return (
@@ -719,11 +717,10 @@ export default function WidgetManager({ connectedDeviceIds }: WidgetManagerProps
                             return null
                           })}
 
-                          {/* Add Widget box at the end */}
+                    
                           <Card
                             className="flex flex-col items-center justify-center h-[300px] border-dashed cursor-pointer hover:bg-muted/50 transition-colors"
                             onClick={() => {
-                              // Pre-select this device in the dialog
                               setSelectedDeviceId(deviceId)
                               setIsAddingWidget(true)
                             }}

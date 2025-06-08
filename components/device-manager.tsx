@@ -59,7 +59,6 @@ export default function DeviceManager({
 
     setIsLoading(true)
     try {
-      // Use direct Supabase query for reliability
       const { data, error } = await supabase
         .from("devices")
         .select("*")
@@ -69,12 +68,8 @@ export default function DeviceManager({
 
       if (error) throw error
       setDevices(data || [])
-
-      // If this is the initial load, try to connect to devices that should be connected
       if (initialLoadRef.current && data && data.length > 0 && connectedDeviceIds.size > 0) {
         initialLoadRef.current = false
-
-        // Find devices that should be connected
         const devicesToConnect = data.filter((device) => connectedDeviceIds.has(device.id) && device.ip_address)
 
         if (devicesToConnect.length > 0) {
@@ -82,8 +77,6 @@ export default function DeviceManager({
             "Attempting to reconnect to devices:",
             devicesToConnect.map((d) => d.name),
           )
-
-          // Try to connect to each device
           for (const device of devicesToConnect) {
             try {
               await connectToESP32(device, true)
@@ -93,8 +86,6 @@ export default function DeviceManager({
           }
         }
       }
-
-      // Check if any connected devices no longer exist
       const newConnectedIds = new Set(connectedDeviceIds)
       let changed = false
 
@@ -107,7 +98,6 @@ export default function DeviceManager({
       }
 
       if (changed && onDeviceConnect) {
-        // Update the parent's state if needed
       }
     } catch (error) {
       console.error("Couldn't fetch devices:", error)
@@ -506,14 +496,14 @@ export default function DeviceManager({
       )}
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
             <CardTitle>ESP32 Devices</CardTitle>
             <CardDescription>Manage your ESP32 devices</CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             {devices.length > 0 && (
-              <Button size="sm" variant="default" onClick={connectToAllDevices}>
+              <Button size="sm" variant="default" onClick={connectToAllDevices} className="w-full sm:w-auto">
                 <Wifi className="mr-2 h-4 w-4" />
                 Connect All
               </Button>
@@ -529,7 +519,7 @@ export default function DeviceManager({
             />
             <Dialog open={addingDevice} onOpenChange={setIsAddingDevice}>
               <DialogTrigger asChild>
-                <Button size="sm">
+                <Button size="sm" className="w-full sm:w-auto">
                   <Plus className="h-4 w-4 mr-2" />
                   Add Device
                 </Button>
@@ -643,7 +633,7 @@ export default function DeviceManager({
                   }`}
                 >
                   <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       {editingDeviceId === device.id ? (
                         <Input
                           value={device.name}
@@ -654,9 +644,9 @@ export default function DeviceManager({
                           placeholder="Device name"
                         />
                       ) : (
-                        <CardTitle className="text-lg">{device.name}</CardTitle>
+                        <CardTitle className="text-lg break-words">{device.name}</CardTitle>
                       )}
-                      <div className="flex items-center gap-2">
+                      <div className="flex gap-2">
                         {editingDeviceId === device.id ? (
                           <Button variant="ghost" size="sm" onClick={() => updateDevice(device)}>
                             <Save className="h-4 w-4" />
@@ -725,24 +715,30 @@ export default function DeviceManager({
                       </div>
                     )}
                     <Separator className="my-2" />
-                    <div className="w-full flex justify-between items-center">
+                    <div className="w-full flex flex-col xs:flex-row gap-2">
                       {connectedDeviceIds.has(device.id) ? (
                         <>
-                          <Badge variant="success" className="flex items-center gap-1">
+                          <Badge variant="success" className="flex items-center gap-1 justify-center xs:w-auto w-full">
                             <CheckCircle className="h-3 w-3" />
                             Connected
                           </Badge>
-                          <Button variant="destructive" size="sm" onClick={() => disconnectFromESP32(device.id, true)}>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="w-full xs:w-auto"
+                            onClick={() => disconnectFromESP32(device.id, true)}
+                          >
                             Disconnect
                           </Button>
                         </>
                       ) : (
                         <>
-                          <Badge variant="outline" className="flex items-center gap-1">
+                          <Badge variant="outline" className="flex items-center gap-1 justify-center xs:w-auto w-full">
                             Disconnected
                           </Badge>
                           <Button
                             size="sm"
+                            className="w-full xs:w-auto"
                             onClick={() => connectToESP32(device)}
                             disabled={connectingDevices.has(device.id) || isReconnecting || !device.ip_address}
                           >
